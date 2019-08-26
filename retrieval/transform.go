@@ -136,19 +136,46 @@ const (
 )
 
 func stripComplexMetricSuffix(name string) (prefix string, suffix string, ok bool) {
-	if strings.HasSuffix(name, metricSuffixBucket) {
-		return name[:len(name)-len(metricSuffixBucket)], metricSuffixBucket, true
+	// handle recorded complex metrics
+	baseLevel := ""
+	baseMetric := name
+	baseOperation := ""
+	isComplex := false
+	isRecorded := false
+	suffixType := ""
+
+	if strings.Count(name, ":") == 2 {
+		s := strings.Split(name, ":")
+		baseLevel = s[0]
+		baseMetric = s[1]
+		baseOperation = s[2]
+		isRecorded = true
 	}
-	if strings.HasSuffix(name, metricSuffixCount) {
-		return name[:len(name)-len(metricSuffixCount)], metricSuffixCount, true
+	if strings.HasSuffix(baseMetric, metricSuffixBucket) {
+		baseMetric = baseMetric[:len(baseMetric)-len(metricSuffixBucket)]
+		suffixType = metricSuffixBucket
+		isComplex = true
 	}
-	if strings.HasSuffix(name, metricSuffixSum) {
-		return name[:len(name)-len(metricSuffixSum)], metricSuffixSum, true
+	if strings.HasSuffix(baseMetric, metricSuffixCount) {
+		baseMetric = baseMetric[:len(baseMetric)-len(metricSuffixCount)]
+		suffixType = metricSuffixCount
+		isComplex = true
 	}
-	if strings.HasSuffix(name, metricSuffixTotal) {
-		return name[:len(name)-len(metricSuffixTotal)], metricSuffixTotal, true
+	if strings.HasSuffix(baseMetric, metricSuffixSum) {
+		baseMetric = baseMetric[:len(baseMetric)-len(metricSuffixSum)]
+		suffixType = metricSuffixSum
+		isComplex = true
 	}
-	return name, "", false
+	if strings.HasSuffix(baseMetric, metricSuffixTotal) {
+		baseMetric = baseMetric[:len(baseMetric)-len(metricSuffixTotal)]
+		suffixType = metricSuffixTotal
+		isComplex = true
+	}
+	if isRecorded {
+		return baseLevel + ":" + baseMetric + ":" + baseOperation, suffixType, isComplex
+	} else {
+		return baseMetric, suffixType, isComplex
+	}
 }
 
 const (
