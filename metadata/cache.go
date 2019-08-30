@@ -37,9 +37,10 @@ type Cache struct {
 	promURL *url.URL
 	client  *http.Client
 
-	metadata       map[string]*cacheEntry
-	seenJobs       map[string]struct{}
-	staticMetadata map[string]*Entry
+	metadata             map[string]*cacheEntry
+	seenJobs             map[string]struct{}
+	staticMetadata       map[string]*Entry
+	recordedMetricPrefix string
 }
 
 // DefaultEndpointPath is the default HTTP path on which Prometheus serves
@@ -60,16 +61,17 @@ type Entry struct {
 // NewCache returns a new cache that gets populated by the metadata endpoint
 // at the given URL.
 // It uses the default endpoint path if no specific path is provided.
-func NewCache(client *http.Client, promURL *url.URL, staticMetadata []*Entry) *Cache {
+func NewCache(client *http.Client, promURL *url.URL, recordedMetricPrefix string, staticMetadata []*Entry) *Cache {
 	if client == nil {
 		client = http.DefaultClient
 	}
 	c := &Cache{
-		promURL:        promURL,
-		client:         client,
-		staticMetadata: map[string]*Entry{},
-		metadata:       map[string]*cacheEntry{},
-		seenJobs:       map[string]struct{}{},
+		promURL:              promURL,
+		client:               client,
+		recordedMetricPrefix: recordedMetricPrefix,
+		staticMetadata:       map[string]*Entry{},
+		metadata:             map[string]*cacheEntry{},
+		seenJobs:             map[string]struct{}{},
 	}
 	for _, m := range staticMetadata {
 		c.staticMetadata[m.Metric] = m
@@ -128,12 +130,23 @@ func (c *Cache) Get(ctx context.Context, job, instance, metric string) (*Entry, 
 	if md != nil && md.found {
 		return md.Entry, nil
 	}
-	// The metric might also be produced by a recording rule, which by convention
-	// contain at least one `:` character. In that case we can generally assume that
-	// it is a gauge. We leave the help text empty.
+
+	// The suggested format for recorded metric names is `level:metric:operation`,
+	// but stackdriver metric names cannot have colon characters in them, so
+	// return an error.
 	if strings.Contains(metric, ":") {
 		entry := &Entry{Metric: metric, MetricType: textparse.MetricTypeGauge}
 		return entry, nil
+	}
+
+	// Treat metric names prefixed with the flagged prefix as recorded metrics. In that
+	// case we can generally assume that it is a gauge. We leave the help text
+	// empty.
+	if strings.HasPrefix(metric, c.recordedMetricPrefix) {
+		return &Entry{
+			Metric:     metric,
+			MetricType: textparse.MetricTypeGauge,
+		}, nil
 	}
 	return nil, nil
 }
